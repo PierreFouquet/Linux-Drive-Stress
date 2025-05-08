@@ -2,7 +2,7 @@
 
 ## Single File Stress - drive_stress_linux
 
-Compiled with - gcc -Wall -Wextra -O2 -o drive_stress_linux drive_stress_linux.c -std=c99
+Compiled with - `gcc -Wall -Wextra -O2 -o drive_stress_linux drive_stress_linux.c -std=c99`
 
 Usage:
 
@@ -14,6 +14,8 @@ Usage:
 
 ## Multifile Stress - stress_test_multi
 
+Compiled with - `gcc stress_test_multi.c -o stress_test_multi -lpthread`
+
 `./stress_test_multi <file_size_in_mb> <number_of_files>` - the default values are 10MB and 2 files.
 
-Compiled with - gcc stress_test_multi.c -o stress_test_multi -lpthread
+`./stress_test_multi 20 5` - 20MB file size, and 5 files.
