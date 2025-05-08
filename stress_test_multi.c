@@ -174,7 +174,7 @@ void *writeFile(void *arg) {
     }
 
     free(dataBuffer);
-    pthread_exit(NULL); // Exit the thread without casting an integer to a pointer
+    pthread_exit((void *)(intptr_t)error_occurred); // Corrected line
 }
 
 int main(int argc, char *argv[]) {
