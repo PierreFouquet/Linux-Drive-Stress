@@ -1,5 +1,15 @@
 # Linux-Drive-Stress
 
+To use, first clone this repo. Ensure you have Git installed first (or you can download the ZIP).
+
+`git clone git@github.com:PierreFouquet/Linux-Drive-Stress.git`
+
+Then navigate to the Linux-Drive-Stress folder.
+
+`cd Linux-Drive-Stress/`
+
+See below for each test.
+
 ## Single File Stress - drive_stress_linux
 
 Compiled with - `gcc -Wall -Wextra -O2 -o drive_stress_linux drive_stress_linux.c -std=c99`
