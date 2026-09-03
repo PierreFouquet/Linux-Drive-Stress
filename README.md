@@ -32,12 +32,14 @@ file, and each iteration runs four phases in lockstep across all workers:
 Design points that make the numbers meaningful:
 
 - **The drive is the bottleneck, not the CPU.** Block contents come from eight
-  independent xorshift64 lanes seeded per block via splitmix64, measured at
-  **11.6 GiB/s** generated and 10.1 GiB/s verified on a mid-range x86 core.
-  A naive `rand()`-per-byte loop caps out at **50 MiB/s** and measures the CPU
-  instead of the drive. The lanes matter: a single xorshift chain is one long
-  dependency chain and only reaches 3.6 GiB/s, which would itself cap a fast
-  NVMe drive.
+  independent xorshift64 lanes seeded per block via splitmix64. Measured on one
+  x86 core, generating into a buffer interleaved with real `O_DIRECT` writes:
+  **8.9 GiB/s** on the sequential path and **4.1 GiB/s** on the 4 KiB random
+  path (12 GiB/s against a cache-resident buffer, but the real write path is
+  always cold because DMA invalidates the buffer). A naive `rand()`-per-byte
+  loop caps out at **50 MiB/s** and measures the CPU instead of the drive.
+  The lanes matter: a single xorshift chain is one long dependency chain and
+  reaches only 3.6 GiB/s, which would itself cap a fast NVMe drive.
 - **Reads reach the device.** Files are opened `O_DIRECT`, so reads bypass the
   page cache. Where the filesystem rejects `O_DIRECT` (tmpfs, some overlayfs)
   the engine warns and falls back to buffered I/O plus
@@ -119,19 +121,38 @@ Watch the latency tail and the read/write bandwidth across iterations. A drive
 that is overheating, running out of SLC cache, or failing shows up as climbing
 p99/p99.9 latency or falling bandwidth well before it returns bad data.
 
+### Where the CPU actually goes
+
+Measured for a 256 MiB single-worker iteration, so you can confirm the test is
+drive-bound rather than CPU-bound on your own hardware:
+
+| Phase | CPU time / wall time | Dominated by |
+| --- | --- | --- |
+| Sequential write + read + verify | ~15% | data generation and verification |
+| Random 4 KiB mix | ~40%, of which 7/8 is *system* time | the kernel's own I/O path, one syscall per op |
+
+The sequential phases are ~85% idle waiting on the drive, which is what you
+want. In the random phase the tool's own work is only about 5% of wall time;
+the rest is the kernel executing the I/O. That is inherent to synchronous
+one-syscall-per-op I/O, and it means a drive capable of several hundred
+thousand IOPS will become syscall-bound before it runs out of headroom. If you
+need to push a drive that hard, use `fio` with `--ioengine=io_uring`, which
+batches submissions into far fewer syscalls.
+
 ### Getting the most accurate bandwidth numbers
 
 Data generation is serial with the write syscall inside each worker, so a
-single worker's sequential write figure includes generation cost. At 11.6 GiB/s
-generated that is a few percent against a SATA SSD, but around 25-30% against a
+single worker's sequential write figure includes generation cost. At 8.9 GiB/s
+generated that is a few percent against a SATA SSD, but around 35% against a
 drive that can absorb 5 GiB/s. Two things remove it:
 
 - **Use `--files 4` or more.** Generation is per-worker and scales across
-  cores, while the drive is shared, so the drive saturates first. This is also
-  the only way to measure a drive's real peak, since one thread at queue depth
-  1 cannot saturate an NVMe drive anyway.
-- **Build with `-march=native`** for a local run. It roughly halves generation
-  cost on machines with wide vector units. It is deliberately not the default,
+  cores, while the drive is shared, so the drive saturates first: the same
+  5 GiB/s drive is understated by about 35% at `--files 1` but only about 12%
+  at `--files 4`. This is also the only way to measure a drive's real peak,
+  since one thread at queue depth 1 cannot saturate an NVMe drive anyway.
+- **Build with `-march=native`** for a local run, which measured about 55%
+  more verification throughput here. It is deliberately not the default,
   because the resulting binary will not run on older CPUs:
 
   ```

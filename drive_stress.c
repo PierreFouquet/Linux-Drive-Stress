@@ -103,9 +103,24 @@ static inline uint64_t xorshift64(uint64_t *s)
  * Number of independent generator lanes. A single xorshift chain is one long
  * dependency chain, so the CPU sits idle waiting on it; running several
  * independent lanes lets it overlap them. Eight lanes emit exactly one 64-byte
- * cache line per inner iteration and measured 3.3x a single chain (3.6 -> 11.7
- * GiB/s). Sixteen and thirty-two regress on register pressure and on the
- * per-granule seeding cost, so eight is the sweet spot.
+ * cache line per inner iteration and measured 3.3x a single chain (3.6 -> 11.9
+ * GiB/s on a cache-resident buffer). Sixteen and thirty-two regress on
+ * register pressure and on the per-granule seeding cost, so eight is best, and
+ * it was also best at 512 B and 64 KiB granules rather than tuned to one size.
+ *
+ * Three further optimisations were measured and rejected; don't re-add them
+ * without re-measuring:
+ *
+ *   - Non-temporal stores (movnti) to skip the read-for-ownership on cold
+ *     lines: only +3% on a cold streaming buffer, because that case is limited
+ *     by memory bandwidth rather than RFO, and 2x SLOWER on the L1-resident
+ *     buffers the random and verify paths actually use.
+ *   - A counter-based splitmix64 generator, which would need no per-granule
+ *     seeding at all: 2x slower, because two 64-bit multiplies per word cost
+ *     far more than the seeding they replace.
+ *   - Replacing the random-phase modulos with a 128-bit multiply: they are
+ *     about 30 cycles against a pread/pwrite of thousands, so well under 1%,
+ *     and it would cost either portability or exactness at read-pct 0 and 100.
  */
 #define DS_LANES 8
 
