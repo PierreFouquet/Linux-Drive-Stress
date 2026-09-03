@@ -10,12 +10,29 @@ cd Linux-Drive-Stress/
 make
 ```
 
-`make` produces both binaries. To build by hand:
+`make` produces both binaries. Compiled binaries are deliberately not committed
+to this repository: one built against a recent glibc will not start on older
+distributions, so building locally is the only reliable option. To build by
+hand:
 
 ```
 gcc -Wall -Wextra -O2 -std=c99 -o drive_stress_linux drive_stress_linux.c drive_stress.c -lpthread
 gcc -Wall -Wextra -O2 -std=c99 -o stress_test_multi  stress_test_multi.c  drive_stress.c -lpthread
 ```
+
+## Tests
+
+```
+./run_tests.sh              # build with strict warnings, then 27 functional checks
+./run_tests.sh --sanitizers # also run under ASan/UBSan and TSan
+```
+
+Takes well under a minute, writes only inside a temporary directory, and exits
+non-zero if anything fails. It covers the option surface, the argument and
+target guards, the read/write mix, interrupt cleanup, and - most importantly -
+injects corruption into a file mid-run and asserts that the tool detects it at
+the exact offset and exits 2. A stress test whose verification silently passes
+is worse than no test at all, so that check is the one to keep working.
 
 ## What it actually does
 

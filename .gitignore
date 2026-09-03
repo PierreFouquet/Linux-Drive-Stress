@@ -1,1 +1,6 @@
+# Build output. Binaries are deliberately not committed: one built on a recent
+# glibc will not start on older distributions (a prebuilt binary here needed
+# GLIBC 2.38, which excludes Ubuntu 22.04 LTS, Debian 12 and RHEL 9). Run make.
 *.o
+drive_stress_linux
+stress_test_multi
