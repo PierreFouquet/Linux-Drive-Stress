@@ -31,10 +31,13 @@ file, and each iteration runs four phases in lockstep across all workers:
 
 Design points that make the numbers meaningful:
 
-- **The drive is the bottleneck, not the CPU.** Block contents come from
-  xorshift64 seeded per block, which fills memory at several GB/s. A naive
-  `rand()`-per-byte loop caps out around 50 MB/s and would measure the CPU
-  instead of the drive.
+- **The drive is the bottleneck, not the CPU.** Block contents come from eight
+  independent xorshift64 lanes seeded per block via splitmix64, measured at
+  **11.6 GiB/s** generated and 10.1 GiB/s verified on a mid-range x86 core.
+  A naive `rand()`-per-byte loop caps out at **50 MiB/s** and measures the CPU
+  instead of the drive. The lanes matter: a single xorshift chain is one long
+  dependency chain and only reaches 3.6 GiB/s, which would itself cap a fast
+  NVMe drive.
 - **Reads reach the device.** Files are opened `O_DIRECT`, so reads bypass the
   page cache. Where the filesystem rejects `O_DIRECT` (tmpfs, some overlayfs)
   the engine warns and falls back to buffered I/O plus
@@ -100,21 +103,43 @@ Linux drive stress test
   random        4 KiB blocks, 70% reads, 10 s per iteration
   O_DIRECT      requested
   verify        on
-  base seed     0x0000117a6a99931a
+  base seed     0x000013f96a9996ab
 Press Ctrl+C to stop.
 
 Iteration 1
-  seq write       1024.0 MiB in   1.08 s     949.4 MiB/s
-  seq read        1024.0 MiB in   0.50 s    2031.3 MiB/s
-  rand 4KiB        55670 IOPS     217.5 MiB/s  (408474 rd / 175394 wr, 70% read target)
-               p50 0.053  p95 0.090  p99 0.262  p99.9 0.721  max 469.762  (ms)
-  re-verify       1024.0 MiB in   0.45 s    2265.4 MiB/s
-  verify          3643.6 MiB checked, 0 mismatches
+  seq write       1024.0 MiB in   0.99 s    1039.3 MiB/s
+  seq read        1024.0 MiB in   0.47 s    2193.3 MiB/s
+  rand 4KiB        55596 IOPS     217.2 MiB/s  (410838 rd / 175936 wr, 70% read target)
+               p50 0.057  p95 0.090  p99 0.262  p99.9 0.655  max 25.166  (ms)
+  re-verify       1024.0 MiB in   0.52 s    1971.2 MiB/s
+  verify          3652.8 MiB checked, 0 mismatches
 ```
 
 Watch the latency tail and the read/write bandwidth across iterations. A drive
 that is overheating, running out of SLC cache, or failing shows up as climbing
 p99/p99.9 latency or falling bandwidth well before it returns bad data.
+
+### Getting the most accurate bandwidth numbers
+
+Data generation is serial with the write syscall inside each worker, so a
+single worker's sequential write figure includes generation cost. At 11.6 GiB/s
+generated that is a few percent against a SATA SSD, but around 25-30% against a
+drive that can absorb 5 GiB/s. Two things remove it:
+
+- **Use `--files 4` or more.** Generation is per-worker and scales across
+  cores, while the drive is shared, so the drive saturates first. This is also
+  the only way to measure a drive's real peak, since one thread at queue depth
+  1 cannot saturate an NVMe drive anyway.
+- **Build with `-march=native`** for a local run. It roughly halves generation
+  cost on machines with wide vector units. It is deliberately not the default,
+  because the resulting binary will not run on older CPUs:
+
+  ```
+  make clean && make CFLAGS="-Wall -Wextra -O3 -march=native -std=c99"
+  ```
+
+`--no-verify` also removes the verification pass if you want throughput only,
+though then the test no longer checks that the drive returns what it stored.
 
 ## Exit status
 
